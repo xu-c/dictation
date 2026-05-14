@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); cd d:\\\\Coding\\\\dictation; node -e \"const {RATE} = require\\('msedge-tts'\\); console.log\\(RATE\\)\" 2>&1)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); cd d:\\\\Coding\\\\dictation; git add .; git commit -m \"fix: msedge-tts v2 API,修复服务端TTS\"; git push; vercel --yes --prod 2>&1 | Select-Object -Last 5)"
+    ]
+  }
+}
