@@ -95,7 +95,7 @@ function buildDelimiterRegex() {
   if (all.length === 0) return /\s+/; // fallback
 
   const chars = all.map(d => {
-    if (d === '\n') return '\\n';
+    if (d === '\\n' || d === '\n') return '\\n';
     return d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   });
   return new RegExp('[' + chars.join('') + ']+');
