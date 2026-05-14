@@ -299,6 +299,84 @@ input[type="text"]:focus {
   width: auto;
 }
 
+/* ========== Delimiter Chips ========== */
+.delimiter-section {
+  margin-top: 12px;
+}
+
+.delimiter-label {
+  font-size: 0.88em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.delimiter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.delimiter-chip {
+  cursor: pointer;
+  user-select: none;
+}
+
+.delimiter-chip input[type="checkbox"] {
+  display: none;
+}
+
+.delimiter-chip span {
+  display: inline-block;
+  height: 30px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  font-weight: 600;
+  line-height: 28px;
+  transition: all 0.15s ease;
+}
+
+.delimiter-chip input:checked + span {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.delimiter-chip span:hover {
+  border-color: var(--primary);
+}
+
+.custom-chip span {
+  background: var(--primary-light);
+  border-style: dashed;
+}
+
+.custom-delimiter-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.custom-delimiter-row input[type="text"] {
+  width: 100px;
+  height: 30px;
+  font-size: 0.85em;
+}
+
+.custom-delimiter-row .btn-sm {
+  height: 30px;
+}
+
+.input-actions {
+  margin-top: 12px;
+}
+
 /* ========== Word Preview ========== */
 .word-preview {
   margin-top: 14px;

@@ -7,10 +7,11 @@ const state = {
   repeatCount: 1,
   rate: 1.0, // slider multiplier, actual TTS rate = rate * 0.6
   volume: 1.0,
-  interval: 15,
+  interval: 5,
   wordVisible: false,
   startPrompt: false,
   manualMode: false,
+  customDelimiters: [], // user-added custom delimiters
   wakeLock: null,
   utterance: null,
   playTimeout: null,
@@ -22,8 +23,9 @@ const $ = (id) => document.getElementById(id);
 
 const dom = {
   wordInput: $('wordInput'),
-  delimiterSelect: $('delimiterSelect'),
-  customDelimiter: $('customDelimiter'),
+  delimiterChips: $('delimiterChips'),
+  customDelimiterInput: $('customDelimiterInput'),
+  addCustomDelimiter: $('addCustomDelimiter'),
   parseBtn: $('parseBtn'),
   wordPreview: $('wordPreview'),
   wordCount: $('wordCount'),
@@ -82,15 +84,21 @@ function updateThemeIcon() {
 }
 
 // ========== Word Parsing ==========
-function getDelimiter() {
-  const sel = dom.delimiterSelect.value;
-  switch (sel) {
-    case 'space': return /\s+/;
-    case 'comma': return /[,，、;；]+/;
-    case 'newline': return /\n/;
-    case 'custom': return dom.customDelimiter.value || /\s+/;
-    default: return /\s+/;
-  }
+function getSelectedDelimiters() {
+  const checked = dom.delimiterChips.querySelectorAll('input:checked');
+  return Array.from(checked).map(cb => cb.value);
+}
+
+function buildDelimiterRegex() {
+  const selected = getSelectedDelimiters();
+  const all = [...selected, ...state.customDelimiters];
+  if (all.length === 0) return /\s+/; // fallback
+
+  const chars = all.map(d => {
+    if (d === '\n') return '\\n';
+    return d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  });
+  return new RegExp('[' + chars.join('') + ']+');
 }
 
 function parseWords() {
@@ -101,14 +109,7 @@ function parseWords() {
     return;
   }
 
-  let delimiter;
-  if (dom.delimiterSelect.value === 'custom' && dom.customDelimiter.value) {
-    const escaped = dom.customDelimiter.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    delimiter = new RegExp(escaped + '+');
-  } else {
-    delimiter = getDelimiter();
-  }
-
+  const delimiter = buildDelimiterRegex();
   const words = text.split(delimiter)
     .map(w => w.trim())
     .filter(w => w.length > 0);
@@ -153,8 +154,10 @@ function speak(text) {
 
     // Reset engine state to prevent first-syllable clipping after long pauses
     speechSynthesis.cancel();
+    // Resume after cancel to fix Android ignoring rate on next utterance
+    speechSynthesis.resume();
 
-    // Small delay after cancel to let engine fully reset
+    // Delay after cancel/resume to let engine fully reset
     setTimeout(() => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN';
@@ -174,7 +177,7 @@ function speak(text) {
 
       state.utterance = utterance;
       speechSynthesis.speak(utterance);
-    }, 150);
+    }, 200);
   });
 }
 
@@ -275,17 +278,21 @@ async function startPlayback() {
   await requestWakeLock();
 
   // Warm up speechSynthesis engine to prevent first-word clipping
+  speechSynthesis.cancel();
+  speechSynthesis.resume();
   await new Promise(resolve => {
-    const warmup = new SpeechSynthesisUtterance('好');
-    warmup.volume = 0.01;
-    warmup.rate = state.rate * 0.6;
-    warmup.lang = 'zh-CN';
-    const voices = speechSynthesis.getVoices();
-    const zhVoice = voices.find(v => v.lang.startsWith('zh'));
-    if (zhVoice) warmup.voice = zhVoice;
-    warmup.onend = () => setTimeout(resolve, 500);
-    warmup.onerror = () => resolve();
-    speechSynthesis.speak(warmup);
+    setTimeout(() => {
+      const warmup = new SpeechSynthesisUtterance('好');
+      warmup.volume = 0.01;
+      warmup.rate = state.rate * 0.6;
+      warmup.lang = 'zh-CN';
+      const voices = speechSynthesis.getVoices();
+      const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+      if (zhVoice) warmup.voice = zhVoice;
+      warmup.onend = () => setTimeout(resolve, 500);
+      warmup.onerror = () => resolve();
+      speechSynthesis.speak(warmup);
+    }, 200);
   });
 
   // Optional start prompt
@@ -491,6 +498,25 @@ function toggleWordVisibility() {
   }
 }
 
+// ========== Custom Delimiter Chips ==========
+function addCustomDelimiterChip(value) {
+  const label = document.createElement('label');
+  label.className = 'delimiter-chip custom-chip';
+  label.innerHTML = `<input type="checkbox" value="${value}" checked><span>${value} ✕</span>`;
+  label.querySelector('input').addEventListener('change', saveSettings);
+  label.querySelector('span').addEventListener('click', (e) => {
+    // Click on the ✕ area removes the custom delimiter
+    const rect = e.target.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    if (clickX > rect.width * 0.65) {
+      state.customDelimiters = state.customDelimiters.filter(d => d !== value);
+      label.remove();
+      saveSettings();
+    }
+  });
+  dom.delimiterChips.appendChild(label);
+}
+
 // ========== Shuffle ==========
 function shuffleWords() {
   if (state.words.length === 0) return;
@@ -598,6 +624,8 @@ function saveSettings() {
     repeatCount: state.repeatCount,
     startPrompt: state.startPrompt,
     manualMode: state.manualMode,
+    delimiters: getSelectedDelimiters(),
+    customDelimiters: state.customDelimiters,
   };
   localStorage.setItem('dictation-settings', JSON.stringify(settings));
 }
@@ -609,7 +637,7 @@ function loadSettings() {
 
     state.rate = settings.rate ?? 1.0;
     state.volume = settings.volume ?? 1.0;
-    state.interval = settings.interval ?? 15;
+    state.interval = settings.interval ?? 5;
     state.repeatCount = settings.repeatCount ?? 1;
     state.startPrompt = settings.startPrompt ?? false;
     state.manualMode = settings.manualMode ?? false;
@@ -623,6 +651,19 @@ function loadSettings() {
     dom.startPromptToggle.checked = state.startPrompt;
     dom.manualModeToggle.checked = state.manualMode;
     dom.intervalSlider.disabled = state.manualMode;
+
+    // Restore delimiter chip states
+    if (settings.delimiters) {
+      dom.delimiterChips.querySelectorAll('input').forEach(cb => {
+        cb.checked = settings.delimiters.includes(cb.value);
+      });
+    }
+
+    // Restore custom delimiters
+    if (settings.customDelimiters && settings.customDelimiters.length > 0) {
+      state.customDelimiters = settings.customDelimiters;
+      state.customDelimiters.forEach(d => addCustomDelimiterChip(d));
+    }
 
     // Update repeat buttons
     document.querySelectorAll('.repeat-btns .btn-sm').forEach(btn => {
@@ -688,8 +729,19 @@ function bindEvents() {
 
   // Parsing
   dom.parseBtn.addEventListener('click', parseWords);
-  dom.delimiterSelect.addEventListener('change', () => {
-    dom.customDelimiter.classList.toggle('hidden', dom.delimiterSelect.value !== 'custom');
+
+  // Delimiter chips - save on change
+  dom.delimiterChips.addEventListener('change', saveSettings);
+
+  // Custom delimiter
+  dom.addCustomDelimiter.addEventListener('click', () => {
+    const val = dom.customDelimiterInput.value.trim();
+    if (val && !state.customDelimiters.includes(val)) {
+      state.customDelimiters.push(val);
+      addCustomDelimiterChip(val);
+      dom.customDelimiterInput.value = '';
+      saveSettings();
+    }
   });
 
   // Sliders

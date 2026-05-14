@@ -11,3 +11,5 @@ desktop.ini
 
 # Misc
 node_modules/
+
+.vercel

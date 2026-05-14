@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(winget install GitHub.cli --accept-source-agreements --accept-package-agreements)"
+    ]
+  }
+}
