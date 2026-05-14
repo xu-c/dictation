@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>语文听写助手 v1.3</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>语文<span>听写</span>助手</h1>
+      <button id="themeToggle" class="btn-icon btn-theme" title="切换深色模式">🌙</button>
+    </header>
+
+    <!-- 词汇输入区 -->
+    <section class="card" id="inputSection">
+      <h2>词汇输入</h2>
+      <textarea id="wordInput" placeholder="请输入听写词汇，例如：春天 花朵 小鸟 阳光&#10;每行或用分隔符隔开均可" rows="5"></textarea>
+      <div class="input-controls">
+        <label>
+          分隔符：
+          <select id="delimiterSelect">
+            <option value="space">空格</option>
+            <option value="comma">逗号 (,，)</option>
+            <option value="newline">换行</option>
+            <option value="custom">自定义</option>
+          </select>
+        </label>
+        <input type="text" id="customDelimiter" class="hidden" placeholder="输入自定义分隔符" maxlength="5">
+        <button id="parseBtn" class="btn">解析词汇</button>
+      </div>
+      <div id="wordPreview" class="word-preview hidden">
+        <span id="wordCount">0</span> 个词汇已解析
+        <div id="wordList" class="word-tags"></div>
+      </div>
+    </section>
+
+    <!-- 参数设置区 -->
+    <section class="card" id="settingsSection">
+      <h2>播放设置</h2>
+      <div class="settings-grid">
+        <div class="setting-item">
+          <label>语速：<span id="rateValue">1.0</span></label>
+          <input type="range" id="rateSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+          <div class="preset-btns">
+            <button class="btn-sm" data-rate="0.5">缓慢</button>
+            <button class="btn-sm active" data-rate="1.0">正常</button>
+            <button class="btn-sm" data-rate="1.5">快速</button>
+          </div>
+        </div>
+        <div class="setting-item">
+          <label>音量：<span id="volumeValue">100</span>%</label>
+          <input type="range" id="volumeSlider" min="0" max="100" step="5" value="100">
+        </div>
+        <div class="setting-item">
+          <label>朗读次数：</label>
+          <div class="repeat-btns">
+            <button class="btn-sm active" data-repeat="1">1次</button>
+            <button class="btn-sm" data-repeat="2">2次</button>
+            <button class="btn-sm" data-repeat="3">3次</button>
+          </div>
+        </div>
+        <div class="setting-item">
+          <label>间隔时间：<span id="intervalValue">15</span>秒</label>
+          <input type="range" id="intervalSlider" min="1" max="30" step="0.5" value="15">
+        </div>
+      </div>
+      <div class="toggle-options">
+        <label class="toggle-label">
+          <input type="checkbox" id="startPromptToggle">
+          <span class="toggle-switch"></span>
+          开始前播放提示语「请开始听写」
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="manualModeToggle">
+          <span class="toggle-switch"></span>
+          手动确认模式（报完一词后手动点击播报下一个）
+        </label>
+      </div>
+    </section>
+
+    <!-- 词表管理 -->
+    <section class="card" id="wordlistSection">
+      <h2>词表管理</h2>
+      <div class="wordlist-controls">
+        <input type="text" id="wordlistName" placeholder="词表名称" maxlength="20">
+        <button id="saveWordlist" class="btn">保存词表</button>
+        <select id="loadWordlist">
+          <option value="">-- 加载词表 --</option>
+        </select>
+        <button id="deleteWordlist" class="btn btn-danger">删除</button>
+        <button id="shuffleBtn" class="btn">随机排序</button>
+      </div>
+    </section>
+
+    <!-- 播放区 -->
+    <section class="card player-section" id="playerSection">
+      <h2>听写播放</h2>
+      <div id="currentWordDisplay" class="current-word">
+        <span id="currentWord" class="word-hidden">●●●</span>
+        <button id="toggleWordBtn" class="btn-sm">显示</button>
+      </div>
+      <div class="progress-area">
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <span id="progressText">0 / 0</span>
+      </div>
+      <div class="player-controls">
+        <button id="prevBtn" class="btn-icon" title="上一个 (←)">⏮</button>
+        <button id="playBtn" class="btn-icon btn-play" title="播放/暂停 (空格)">▶</button>
+        <button id="stopBtn" class="btn-icon" title="停止">⏹</button>
+        <button id="nextBtn" class="btn-icon" title="下一个 (→)">⏭</button>
+      </div>
+      <div class="status-bar">
+        <span id="statusText">就绪</span>
+        <span id="wakeLockStatus" class="wake-lock-badge">🔓 未锁定</span>
+      </div>
+    </section>
+
+    <!-- 词汇列表预览 -->
+    <section class="card collapsible" id="listSection">
+      <h2 class="collapsible-header" id="listToggle">
+        词汇列表 <span class="toggle-icon">▼</span>
+      </h2>
+      <div id="wordListPreview" class="collapsible-content hidden">
+        <div id="fullWordList" class="full-word-list"></div>
+      </div>
+    </section>
+
+    <!-- 快捷键提示 -->
+    <footer>
+      <p class="shortcut-hint">
+        快捷键：<kbd>空格</kbd> 播放/暂停/确认 · <kbd>Enter</kbd> 确认下一个 · <kbd>←</kbd> 上一个 · <kbd>→</kbd> 下一个 · <kbd>S</kbd> 停止
+      </p>
+    </footer>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
