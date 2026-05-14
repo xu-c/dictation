@@ -1,0 +1,9 @@
+{
+  "name": "dictation",
+  "version": "1.4.0",
+  "private": true,
+  "description": "语文听写助手",
+  "dependencies": {
+    "msedge-tts": "^1.3.4"
+  }
+}

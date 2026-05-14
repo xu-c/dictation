@@ -12,6 +12,7 @@ const state = {
   startPrompt: false,
   manualMode: false,
   customDelimiters: [], // user-added custom delimiters
+  useServerTTS: null, // null=auto-detect, true=server, false=browser
   wakeLock: null,
   utterance: null,
   playTimeout: null,
@@ -145,13 +146,61 @@ function updateFullWordList() {
 }
 
 // ========== TTS Engine ==========
-function speak(text) {
-  return new Promise((resolve, reject) => {
-    if (!('speechSynthesis' in window)) {
-      reject(new Error('浏览器不支持语音合成'));
-      return;
-    }
 
+// Detect if browser speechSynthesis is usable
+function detectBrowserTTS() {
+  if (!('speechSynthesis' in window)) return false;
+  // Some Android browsers have speechSynthesis but it doesn't work
+  // Try a quick test
+  try {
+    const test = new SpeechSynthesisUtterance('');
+    speechSynthesis.speak(test);
+    speechSynthesis.cancel();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Speak via server TTS API (fallback for browsers without speechSynthesis)
+function speakViaServer(text) {
+  return new Promise((resolve, reject) => {
+    const actualRate = state.rate * 0.6;
+    const url = `/api/tts?text=${encodeURIComponent(text)}&rate=${actualRate}`;
+
+    const audio = new Audio();
+    audio.volume = state.volume;
+
+    audio.onended = () => resolve();
+    audio.onerror = (e) => reject(new Error('音频播放失败'));
+
+    // Abort if playback stops while loading
+    const abortCheck = setInterval(() => {
+      if (!state.isPlaying) {
+        audio.pause();
+        audio.src = '';
+        clearInterval(abortCheck);
+        resolve();
+      }
+    }, 200);
+
+    audio.src = url;
+    audio.play().catch(err => {
+      clearInterval(abortCheck);
+      reject(err);
+    });
+
+    // Cleanup on end
+    audio.onended = () => {
+      clearInterval(abortCheck);
+      resolve();
+    };
+  });
+}
+
+// Speak via browser speechSynthesis
+function speakViaBrowser(text) {
+  return new Promise((resolve, reject) => {
     // Reset engine state to prevent first-syllable clipping after long pauses
     speechSynthesis.cancel();
     // Resume after cancel to fix Android ignoring rate on next utterance
@@ -181,6 +230,36 @@ function speak(text) {
   });
 }
 
+// Main speak function with auto-detection and fallback
+async function speak(text) {
+  // First call: detect capability
+  if (state.useServerTTS === null) {
+    state.useServerTTS = !detectBrowserTTS();
+    updateTTSMarker();
+  }
+
+  if (state.useServerTTS) {
+    return speakViaServer(text);
+  }
+
+  try {
+    return await speakViaBrowser(text);
+  } catch (err) {
+    // Browser TTS failed, switch to server
+    console.warn('Browser TTS failed, switching to server TTS:', err);
+    state.useServerTTS = true;
+    updateTTSMarker();
+    return speakViaServer(text);
+  }
+}
+
+function updateTTSMarker() {
+  const badge = dom.wakeLockStatus;
+  if (state.useServerTTS) {
+    badge.textContent = '🔊 服务端语音';
+  }
+}
+
 function sleep(ms) {
   return new Promise(resolve => {
     state.playTimeout = setTimeout(resolve, ms);
@@ -189,6 +268,11 @@ function sleep(ms) {
 
 // Keep speechSynthesis awake during long pauses to prevent first-syllable clipping
 function keepAliveSleep(ms) {
+  // Server TTS uses Audio API, no need to keep speechSynthesis alive
+  if (state.useServerTTS) {
+    return sleep(ms);
+  }
+
   return new Promise(resolve => {
     const interval = 2000; // poke every 2s
     let elapsed = 0;
@@ -277,23 +361,29 @@ async function startPlayback() {
   dom.statusText.textContent = '播放中...';
   await requestWakeLock();
 
-  // Warm up speechSynthesis engine to prevent first-word clipping
-  speechSynthesis.cancel();
-  speechSynthesis.resume();
-  await new Promise(resolve => {
-    setTimeout(() => {
-      const warmup = new SpeechSynthesisUtterance('好');
-      warmup.volume = 0.01;
-      warmup.rate = state.rate * 0.6;
-      warmup.lang = 'zh-CN';
-      const voices = speechSynthesis.getVoices();
-      const zhVoice = voices.find(v => v.lang.startsWith('zh'));
-      if (zhVoice) warmup.voice = zhVoice;
-      warmup.onend = () => setTimeout(resolve, 500);
-      warmup.onerror = () => resolve();
-      speechSynthesis.speak(warmup);
-    }, 200);
-  });
+  // Warm up speechSynthesis engine to prevent first-word clipping (browser TTS only)
+  if (state.useServerTTS === false) {
+    speechSynthesis.cancel();
+    speechSynthesis.resume();
+    await new Promise(resolve => {
+      setTimeout(() => {
+        const warmup = new SpeechSynthesisUtterance('好');
+        warmup.volume = 0.01;
+        warmup.rate = state.rate * 0.6;
+        warmup.lang = 'zh-CN';
+        const voices = speechSynthesis.getVoices();
+        const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+        if (zhVoice) warmup.voice = zhVoice;
+        warmup.onend = () => setTimeout(resolve, 500);
+        warmup.onerror = () => resolve();
+        speechSynthesis.speak(warmup);
+      }, 200);
+    });
+  } else if (state.useServerTTS === null) {
+    // First playback: detect TTS capability via a quick speak attempt
+    state.useServerTTS = !detectBrowserTTS();
+    updateTTSMarker();
+  }
 
   // Optional start prompt
   if (state.startPrompt) {
