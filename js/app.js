@@ -12,7 +12,8 @@ const state = {
   startPrompt: false,
   manualMode: false,
   customDelimiters: [], // user-added custom delimiters
-  useServerTTS: null, // null=auto-detect, true=server, false=browser
+  preferBrowserTTS: false, // user preference, default server-first
+  currentEngine: null, // 'server'|'browser' — set on first speak, updated on fallback
   wakeLock: null,
   utterance: null,
   playTimeout: null,
@@ -58,6 +59,7 @@ const dom = {
   themeToggle: $('themeToggle'),
   startPromptToggle: $('startPromptToggle'),
   manualModeToggle: $('manualModeToggle'),
+  preferBrowserToggle: $('preferBrowserToggle'),
 };
 
 // ========== Theme ==========
@@ -147,22 +149,7 @@ function updateFullWordList() {
 
 // ========== TTS Engine ==========
 
-// Detect if browser speechSynthesis is usable
-function detectBrowserTTS() {
-  if (!('speechSynthesis' in window)) return false;
-  // Some Android browsers have speechSynthesis but it doesn't work
-  // Try a quick test
-  try {
-    const test = new SpeechSynthesisUtterance('');
-    speechSynthesis.speak(test);
-    speechSynthesis.cancel();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Speak via server TTS API (fallback for browsers without speechSynthesis)
+// Speak via server TTS API
 function speakViaServer(text) {
   return new Promise((resolve, reject) => {
     const actualRate = state.rate * 0.6;
@@ -171,10 +158,6 @@ function speakViaServer(text) {
     const audio = new Audio();
     audio.volume = state.volume;
 
-    audio.onended = () => resolve();
-    audio.onerror = (e) => reject(new Error('音频播放失败'));
-
-    // Abort if playback stops while loading
     const abortCheck = setInterval(() => {
       if (!state.isPlaying) {
         audio.pause();
@@ -184,36 +167,26 @@ function speakViaServer(text) {
       }
     }, 200);
 
-    audio.src = url;
-    audio.play().catch(err => {
-      clearInterval(abortCheck);
-      reject(err);
-    });
+    audio.onended = () => { clearInterval(abortCheck); resolve(); };
+    audio.onerror = () => { clearInterval(abortCheck); reject(new Error('音频播放失败')); };
 
-    // Cleanup on end
-    audio.onended = () => {
-      clearInterval(abortCheck);
-      resolve();
-    };
+    audio.src = url;
+    audio.play().catch(err => { clearInterval(abortCheck); reject(err); });
   });
 }
 
 // Speak via browser speechSynthesis
 function speakViaBrowser(text) {
   return new Promise((resolve, reject) => {
-    // Reset engine state to prevent first-syllable clipping after long pauses
     speechSynthesis.cancel();
-    // Resume after cancel to fix Android ignoring rate on next utterance
     speechSynthesis.resume();
 
-    // Delay after cancel/resume to let engine fully reset
     setTimeout(() => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN';
-      utterance.rate = state.rate * 0.6; // remap: slider 1.0 = TTS 0.6
+      utterance.rate = state.rate * 0.6;
       utterance.volume = state.volume;
 
-      // Try to pick a Chinese voice
       const voices = speechSynthesis.getVoices();
       const zhVoice = voices.find(v => v.lang.startsWith('zh'));
       if (zhVoice) utterance.voice = zhVoice;
@@ -230,33 +203,55 @@ function speakViaBrowser(text) {
   });
 }
 
-// Main speak function with auto-detection and fallback
+// Main speak: server-first by default, with bidirectional fallback
 async function speak(text) {
-  // First call: detect capability
-  if (state.useServerTTS === null) {
-    state.useServerTTS = !detectBrowserTTS();
-    updateTTSMarker();
+  // First call: try preferred engine
+  if (state.currentEngine === null) {
+    const primary = state.preferBrowserTTS ? 'browser' : 'server';
+    const secondary = state.preferBrowserTTS ? 'server' : 'browser';
+    try {
+      await (primary === 'server' ? speakViaServer(text) : speakViaBrowser(text));
+      state.currentEngine = primary;
+      updateTTSMarker();
+      return;
+    } catch (e) {
+      console.warn(`Primary TTS (${primary}) failed, falling back to ${secondary}:`, e);
+      state.currentEngine = secondary;
+      updateTTSMarker();
+      // Fall through to secondary
+    }
   }
 
-  if (state.useServerTTS) {
-    return speakViaServer(text);
-  }
-
-  try {
-    return await speakViaBrowser(text);
-  } catch (err) {
-    // Browser TTS failed, switch to server
-    console.warn('Browser TTS failed, switching to server TTS:', err);
-    state.useServerTTS = true;
-    updateTTSMarker();
-    return speakViaServer(text);
+  // Use known engine, downgrade on failure
+  if (state.currentEngine === 'server') {
+    try {
+      return await speakViaServer(text);
+    } catch (e) {
+      console.warn('Server TTS failed, falling back to browser:', e);
+      state.currentEngine = 'browser';
+      updateTTSMarker();
+      return speakViaBrowser(text);
+    }
+  } else {
+    try {
+      return await speakViaBrowser(text);
+    } catch (e) {
+      console.warn('Browser TTS failed, falling back to server:', e);
+      state.currentEngine = 'server';
+      updateTTSMarker();
+      return speakViaServer(text);
+    }
   }
 }
 
 function updateTTSMarker() {
   const badge = dom.wakeLockStatus;
-  if (state.useServerTTS) {
-    badge.textContent = '🔊 服务端语音';
+  if (state.currentEngine === 'server') {
+    badge.textContent = '🔊 Edge 语音';
+  } else if (state.currentEngine === 'browser') {
+    badge.textContent = '🔊 浏览器语音';
+  } else {
+    badge.textContent = state.preferBrowserTTS ? '🔊 浏览器语音' : '🔊 Edge 语音';
   }
 }
 
@@ -269,7 +264,7 @@ function sleep(ms) {
 // Keep speechSynthesis awake during long pauses to prevent first-syllable clipping
 function keepAliveSleep(ms) {
   // Server TTS uses Audio API, no need to keep speechSynthesis alive
-  if (state.useServerTTS) {
+  if (state.currentEngine === 'server') {
     return sleep(ms);
   }
 
@@ -362,7 +357,13 @@ async function startPlayback() {
   await requestWakeLock();
 
   // Warm up speechSynthesis engine to prevent first-word clipping (browser TTS only)
-  if (state.useServerTTS === false) {
+  // Determine which engine will be used first
+  if (state.currentEngine === null) {
+    state.currentEngine = state.preferBrowserTTS ? 'browser' : 'server';
+    updateTTSMarker();
+  }
+
+  if (state.currentEngine === 'browser') {
     speechSynthesis.cancel();
     speechSynthesis.resume();
     await new Promise(resolve => {
@@ -379,10 +380,6 @@ async function startPlayback() {
         speechSynthesis.speak(warmup);
       }, 200);
     });
-  } else if (state.useServerTTS === null) {
-    // First playback: detect TTS capability via a quick speak attempt
-    state.useServerTTS = !detectBrowserTTS();
-    updateTTSMarker();
   }
 
   // Optional start prompt
@@ -714,6 +711,7 @@ function saveSettings() {
     repeatCount: state.repeatCount,
     startPrompt: state.startPrompt,
     manualMode: state.manualMode,
+    preferBrowserTTS: state.preferBrowserTTS,
     delimiters: getSelectedDelimiters(),
     customDelimiters: state.customDelimiters,
   };
@@ -731,6 +729,7 @@ function loadSettings() {
     state.repeatCount = settings.repeatCount ?? 1;
     state.startPrompt = settings.startPrompt ?? false;
     state.manualMode = settings.manualMode ?? false;
+    state.preferBrowserTTS = settings.preferBrowserTTS ?? false;
 
     dom.rateSlider.value = state.rate;
     dom.rateValue.textContent = state.rate.toFixed(1);
@@ -740,6 +739,7 @@ function loadSettings() {
     dom.intervalValue.textContent = state.interval;
     dom.startPromptToggle.checked = state.startPrompt;
     dom.manualModeToggle.checked = state.manualMode;
+    dom.preferBrowserToggle.checked = state.preferBrowserTTS;
     dom.intervalSlider.disabled = state.manualMode;
 
     // Restore delimiter chip states
@@ -891,6 +891,14 @@ function bindEvents() {
   dom.manualModeToggle.addEventListener('change', () => {
     state.manualMode = dom.manualModeToggle.checked;
     dom.intervalSlider.disabled = state.manualMode;
+    saveSettings();
+  });
+
+  dom.preferBrowserToggle.addEventListener('change', () => {
+    state.preferBrowserTTS = dom.preferBrowserToggle.checked;
+    // Reset current engine so next speak re-selects
+    state.currentEngine = null;
+    updateTTSMarker();
     saveSettings();
   });
   dom.stopBtn.addEventListener('click', stopPlayback);
