@@ -4,10 +4,10 @@ const state = {
   currentIndex: -1,
   isPlaying: false,
   isPaused: false,
-  repeatCount: 1,
-  rate: 1.0, // slider multiplier, actual TTS rate = rate * 0.6
+  repeatCount: 2,
+  rate: 0.5, // slider multiplier, actual TTS rate = rate * 0.6
   volume: 1.0,
-  interval: 5,
+  interval: 16,
   wordVisible: false,
   startPrompt: false,
   manualMode: false,
@@ -723,10 +723,10 @@ function loadSettings() {
     const settings = JSON.parse(localStorage.getItem('dictation-settings'));
     if (!settings) return;
 
-    state.rate = settings.rate ?? 1.0;
+    state.rate = settings.rate ?? 0.5;
     state.volume = settings.volume ?? 1.0;
-    state.interval = settings.interval ?? 5;
-    state.repeatCount = settings.repeatCount ?? 1;
+    state.interval = settings.interval ?? 16;
+    state.repeatCount = settings.repeatCount ?? 2;
     state.startPrompt = settings.startPrompt ?? false;
     state.manualMode = settings.manualMode ?? false;
     state.preferBrowserTTS = settings.preferBrowserTTS ?? false;
