@@ -413,6 +413,8 @@ async function startPlayback() {
 
   if (state.isPlaying) {
     if (state.startPrompt) {
+      dom.statusText.textContent = `间隔等待... (${state.words.length}/${state.words.length})`;
+      await keepAliveSleep(state.interval * 1000);
       dom.statusText.textContent = '听写完毕';
       await speak('听写完毕');
     }
