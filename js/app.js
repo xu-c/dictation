@@ -412,6 +412,10 @@ async function startPlayback() {
   }
 
   if (state.isPlaying) {
+    if (state.startPrompt) {
+      dom.statusText.textContent = '听写完毕';
+      await speak('听写完毕');
+    }
     dom.statusText.textContent = '听写完成！';
     stopPlayback();
   }
