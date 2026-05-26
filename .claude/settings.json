@@ -7,7 +7,8 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(vercel --yes --prod)"
+      "Bash(vercel --yes --prod)",
+      "Bash(vercel --yes --prod --confirm)"
     ]
   }
 }
