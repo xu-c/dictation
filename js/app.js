@@ -16,7 +16,9 @@ const state = {
   currentEngine: null, // 'server'|'browser' — set on first speak, updated on fallback
   wakeLock: null,
   utterance: null,
+  currentAudio: null, // Active Audio element for server TTS (used to abort)
   playTimeout: null,
+  playTimeoutId: null, // Additional timeout id for keepAliveSleep interval
   manualResolve: null, // resolve function for manual confirm
 };
 
@@ -157,21 +159,28 @@ function speakViaServer(text) {
 
     const audio = new Audio();
     audio.volume = state.volume;
+    state.currentAudio = audio;
 
     const abortCheck = setInterval(() => {
       if (!state.isPlaying) {
         audio.pause();
         audio.src = '';
         clearInterval(abortCheck);
+        state.currentAudio = null;
         resolve();
       }
     }, 200);
 
-    audio.onended = () => { clearInterval(abortCheck); resolve(); };
-    audio.onerror = () => { clearInterval(abortCheck); reject(new Error('音频播放失败')); };
+    const cleanup = () => {
+      clearInterval(abortCheck);
+      state.currentAudio = null;
+    };
+
+    audio.onended = () => { cleanup(); resolve(); };
+    audio.onerror = () => { cleanup(); reject(new Error('音频播放失败')); };
 
     audio.src = url;
-    audio.play().catch(err => { clearInterval(abortCheck); reject(err); });
+    audio.play().catch(err => { cleanup(); reject(err); });
   });
 }
 
@@ -261,6 +270,24 @@ function sleep(ms) {
   });
 }
 
+// Abort current speech: cancel browser TTS or stop server TTS audio
+function abortSpeech() {
+  if (state.currentAudio) {
+    state.currentAudio.pause();
+    state.currentAudio.src = '';
+    state.currentAudio = null;
+  }
+  speechSynthesis.cancel();
+}
+
+// Clear any pending interval/manual-confirm timeout
+function abortDelay() {
+  clearTimeout(state.playTimeout);
+  clearInterval(state.playTimeoutId);
+  state.playTimeout = null;
+  state.playTimeoutId = null;
+}
+
 // Keep speechSynthesis awake during long pauses to prevent first-syllable clipping
 function keepAliveSleep(ms) {
   // Server TTS uses Audio API, no need to keep speechSynthesis alive
@@ -271,13 +298,13 @@ function keepAliveSleep(ms) {
   return new Promise(resolve => {
     const interval = 2000; // poke every 2s
     let elapsed = 0;
-    const timer = setInterval(() => {
+    state.playTimeoutId = setInterval(() => {
       elapsed += interval;
       if (elapsed >= ms) {
-        clearInterval(timer);
+        clearInterval(state.playTimeoutId);
+        state.playTimeoutId = null;
         resolve();
       } else {
-        // Poke the engine with a silent utterance to prevent sleep
         try {
           const poke = new SpeechSynthesisUtterance('');
           poke.volume = 0;
@@ -286,9 +313,9 @@ function keepAliveSleep(ms) {
         } catch (e) { /* ignore */ }
       }
     }, interval);
-    // Also set a fallback timeout in case interval fires late
     state.playTimeout = setTimeout(() => {
-      clearInterval(timer);
+      clearInterval(state.playTimeoutId);
+      state.playTimeoutId = null;
       resolve();
     }, ms + 100);
   });
@@ -328,13 +355,16 @@ async function playWord(index) {
   // Speak multiple times
   for (let i = 0; i < state.repeatCount; i++) {
     if (!state.isPlaying) return;
+    if (state.currentIndex !== index) return; // user skipped away
     while (state.isPaused) {
       await sleep(200);
       if (!state.isPlaying) return;
+      if (state.currentIndex !== index) return;
     }
     await speak(word);
+    if (state.currentIndex !== index) return; // user skipped mid-speak
     if (i < state.repeatCount - 1) {
-      await sleep(2000); // Gap between repeats
+      await sleep(2000);
     }
   }
 }
@@ -390,24 +420,32 @@ async function startPlayback() {
 
   if (!state.isPlaying) return;
 
-  const startIndex = state.currentIndex >= 0 ? state.currentIndex : 0;
+  if (state.currentIndex < 0) {
+    state.currentIndex = 0;
+  }
 
-  for (let i = startIndex; i < state.words.length; i++) {
+  while (state.isPlaying && state.currentIndex < state.words.length) {
+    const idx = state.currentIndex;
+    await playWord(idx);
+
     if (!state.isPlaying) break;
+    if (state.currentIndex >= state.words.length) break;
 
-    await playWord(i);
+    // If user skipped away during playWord, skip the interval wait
+    if (state.currentIndex !== idx) continue;
 
-    if (!state.isPlaying) break;
+    if (state.manualMode) {
+      await waitForManualConfirm();
+      if (!state.isPlaying) break;
+    } else {
+      dom.statusText.textContent = `间隔等待... (${idx + 1}/${state.words.length})`;
+      await keepAliveSleep(state.interval * 1000);
+      if (!state.isPlaying) break;
+    }
 
-    // Between words: manual confirm or timed interval
-    if (i < state.words.length - 1) {
-      if (state.manualMode) {
-        await waitForManualConfirm();
-        if (!state.isPlaying) break;
-      } else {
-        dom.statusText.textContent = `间隔等待... (${i + 1}/${state.words.length})`;
-        await keepAliveSleep(state.interval * 1000);
-      }
+    // Only auto-advance if user didn't manually change index during interval
+    if (state.currentIndex === idx) {
+      state.currentIndex++;
     }
   }
 
@@ -441,9 +479,8 @@ function stopPlayback() {
   state.isPlaying = false;
   state.isPaused = false;
   state.currentIndex = -1;
-  speechSynthesis.cancel();
-  clearTimeout(state.playTimeout);
-  // Clean up manual confirm state
+  abortSpeech();
+  abortDelay();
   if (state.manualResolve) {
     state.manualResolve();
     state.manualResolve = null;
@@ -472,19 +509,17 @@ function prevWord() {
   updateProgress();
   updateFullWordList();
   if (state.isPlaying) {
-    speechSynthesis.cancel();
-    clearTimeout(state.playTimeout);
-    playWord(newIdx);
+    abortSpeech();
+    abortDelay();
+    // main while loop picks up the new state.currentIndex
   }
 }
 
 function nextWord() {
-  // In manual confirm mode, "next" just confirms current word done
   if (state.manualMode && state.isPlaying && state.manualResolve) {
     confirmNext();
     return;
   }
-
   if (state.words.length === 0) return;
   const newIdx = Math.min(state.words.length - 1, state.currentIndex + 1);
   state.currentIndex = newIdx;
@@ -492,9 +527,9 @@ function nextWord() {
   updateProgress();
   updateFullWordList();
   if (state.isPlaying) {
-    speechSynthesis.cancel();
-    clearTimeout(state.playTimeout);
-    playWord(newIdx);
+    abortSpeech();
+    abortDelay();
+    // main while loop picks up the new state.currentIndex
   }
 }
 
