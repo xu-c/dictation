@@ -3,6 +3,7 @@
   "version": "1.4.0",
   "private": true,
   "description": "语文听写助手",
+  "license": "MIT",
   "dependencies": {
     "msedge-tts": "^2.0.5"
   }
