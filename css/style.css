@@ -14,10 +14,11 @@
   --danger: #d94f5c;
   --danger-hover: #c4404d;
   --success: #3aaf6a;
+  --warning: #d8902f;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --radius: 14px;
+  --radius: 8px;
   --radius-sm: 8px;
   --radius-xs: 5px;
   --font: "HarmonyOS Sans", "PingFang SC", "Hiragino Sans GB",
@@ -42,6 +43,7 @@
   --danger: #f06575;
   --danger-hover: #e05060;
   --success: #4cd68a;
+  --warning: #f0b45b;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -58,7 +60,9 @@
 
 body {
   font-family: var(--font);
-  background: var(--bg);
+  background:
+    linear-gradient(180deg, rgba(91, 106, 191, 0.08), transparent 240px),
+    var(--bg);
   color: var(--text);
   line-height: 1.65;
   min-height: 100vh;
@@ -73,17 +77,17 @@ body {
 
 /* ========== Layout ========== */
 .container {
-  max-width: 680px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 28px 20px 40px;
+  padding: 24px 18px 40px;
 }
 
 header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding: 0 4px;
+  margin-bottom: 18px;
+  padding: 0 2px;
 }
 
 header h1 {
@@ -109,8 +113,8 @@ header h1 span {
 .card {
   background: var(--card-bg);
   border-radius: var(--radius);
-  padding: 24px;
-  margin-bottom: 16px;
+  padding: 20px;
+  margin-bottom: 14px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-light);
   transition: background 0.3s, box-shadow 0.3s, border-color 0.3s;
@@ -122,14 +126,14 @@ header h1 span {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  margin-bottom: 16px;
-  padding-bottom: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
   border-bottom: 2px solid var(--border-light);
 }
 
 /* ========== Buttons ========== */
 .btn {
-  height: 38px;
+  min-height: 40px;
   padding: 0 18px;
   border: none;
   border-radius: var(--radius-sm);
@@ -190,8 +194,8 @@ header h1 span {
 }
 
 .btn-play {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   font-size: 1.4em;
   background: var(--primary);
   color: white;
@@ -210,7 +214,7 @@ header h1 span {
 }
 
 .btn-sm {
-  height: 30px;
+  min-height: 32px;
   padding: 0 12px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-xs);
@@ -241,6 +245,7 @@ textarea {
   font-family: inherit;
   line-height: 1.6;
   resize: vertical;
+  min-height: 118px;
   background: var(--bg);
   color: var(--text);
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -301,7 +306,12 @@ input[type="text"]:focus {
 
 /* ========== Delimiter Chips ========== */
 .delimiter-section {
-  margin-top: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 70%, var(--card-bg));
 }
 
 .delimiter-label {
@@ -359,7 +369,7 @@ input[type="text"]:focus {
 .custom-delimiter-row {
   display: flex;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
   align-items: center;
 }
 
@@ -407,14 +417,20 @@ input[type="text"]:focus {
 /* ========== Settings ========== */
 .settings-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .setting-item {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 72%, var(--card-bg));
 }
 
 .setting-item > label {
@@ -466,7 +482,7 @@ input[type="range"]:disabled {
 .toggle-options {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-light);
@@ -481,6 +497,14 @@ input[type="range"]:disabled {
   color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
+  line-height: 1.45;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.toggle-label:hover {
+  background: var(--primary-light);
 }
 
 .toggle-label input[type="checkbox"] {
@@ -525,25 +549,29 @@ input[type="range"]:disabled {
 
 /* ========== Word List Management ========== */
 .wordlist-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(140px, 1fr) auto auto;
   gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
 }
 
 .wordlist-controls input[type="text"] {
-  flex: 1;
   min-width: 120px;
 }
 
 .wordlist-controls select {
-  flex: 1;
   min-width: 140px;
 }
 
 /* ========== Player Section ========== */
 .player-section {
   text-align: center;
+  position: sticky;
+  top: 10px;
+  z-index: 10;
+  border-color: var(--primary-light);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border-light));
+  box-shadow: var(--shadow-lg);
 }
 
 .current-word {
@@ -551,18 +579,24 @@ input[type="range"]:disabled {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  margin: 20px 0;
-  min-height: 64px;
+  margin: 14px 0 16px;
+  min-height: 78px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--primary-light);
 }
 
 #currentWord {
-  font-size: 2.8em;
+  font-size: clamp(2em, 8vw, 3em);
   font-weight: 800;
-  letter-spacing: 6px;
+  letter-spacing: 4px;
   color: var(--primary);
   user-select: none;
   transition: opacity 0.3s, filter 0.3s;
   font-family: var(--font);
+  overflow-wrap: anywhere;
+  line-height: 1.12;
 }
 
 .word-hidden {
@@ -574,7 +608,7 @@ input[type="range"]:disabled {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 14px 0;
+  margin: 12px 0 16px;
 }
 
 .progress-bar {
@@ -607,14 +641,15 @@ input[type="range"]:disabled {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 16px;
-  margin: 20px 0;
+  gap: 14px;
+  margin: 16px 0;
 }
 
 .status-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   font-size: 0.82em;
   color: var(--text-muted);
   margin-top: 10px;
@@ -624,6 +659,17 @@ input[type="range"]:disabled {
 
 #statusText {
   font-weight: 500;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-badges {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .wake-lock-badge {
@@ -632,6 +678,7 @@ input[type="range"]:disabled {
   background: var(--primary-light);
   font-size: 0.85em;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 /* ========== Collapsible List ========== */
@@ -718,7 +765,7 @@ kbd {
 /* ========== Responsive ========== */
 @media (max-width: 600px) {
   .container {
-    padding: 16px 12px 32px;
+    padding: 14px 10px 30px;
   }
 
   header h1 {
@@ -727,31 +774,44 @@ kbd {
 
   .settings-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 10px;
   }
 
   #currentWord {
-    font-size: 2em;
-    letter-spacing: 4px;
+    letter-spacing: 2px;
   }
 
   .wordlist-controls {
-    flex-direction: column;
+    grid-template-columns: 1fr 1fr;
   }
 
   .wordlist-controls select,
   .wordlist-controls input[type="text"] {
     width: 100%;
-    flex: none;
+    grid-column: span 2;
+  }
+
+  .wordlist-controls .btn {
+    width: 100%;
   }
 
   .player-controls {
-    gap: 10px;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .status-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .status-badges {
+    justify-content: flex-start;
   }
 
   .btn-play {
-    width: 50px;
-    height: 50px;
+    width: 60px;
+    height: 60px;
     font-size: 1.2em;
   }
 
@@ -762,7 +822,11 @@ kbd {
   }
 
   .card {
-    padding: 18px;
+    padding: 16px;
+  }
+
+  .player-section {
+    top: 8px;
   }
 }
 

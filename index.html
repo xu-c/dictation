@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>语文听写助手 v1.7</title>
+  <title>语文听写助手 v2.2</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -21,12 +21,23 @@
         <span class="delimiter-label">分隔符：</span>
         <div class="delimiter-chips" id="delimiterChips">
           <label class="delimiter-chip"><input type="checkbox" value=" " checked><span>空格</span></label>
-          <label class="delimiter-chip"><input type="checkbox" value="," checked><span>,</span></label>
-          <label class="delimiter-chip"><input type="checkbox" value="，" checked><span>，</span></label>
-          <label class="delimiter-chip"><input type="checkbox" value="、" checked><span>、</span></label>
           <label class="delimiter-chip"><input type="checkbox" value="\n" checked><span>换行</span></label>
-          <label class="delimiter-chip"><input type="checkbox" value=";"><span>;</span></label>
-          <label class="delimiter-chip"><input type="checkbox" value="；"><span>；</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="\t" checked><span>制表符</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="、" checked><span>、</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="，" checked><span>，</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="。" checked><span>。</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="；" checked><span>；</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="：" checked><span>：</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="？" checked><span>？</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="！" checked><span>！</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="," checked><span>,</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="." checked><span>.</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value=";" checked><span>;</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value=":" checked><span>:</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="?" checked><span>?</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="!" checked><span>!</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="/" checked><span>/</span></label>
+          <label class="delimiter-chip"><input type="checkbox" value="|" checked><span>|</span></label>
         </div>
         <div class="custom-delimiter-row">
           <input type="text" id="customDelimiterInput" placeholder="自定义分隔符" maxlength="5">
@@ -86,7 +97,7 @@
         <label class="toggle-label">
           <input type="checkbox" id="preferBrowserToggle">
           <span class="toggle-switch"></span>
-          优先使用浏览器内置语音（默认使用微软Edge，语速更可控）
+          优先使用本地语音引擎（默认在线 TTS，在线失败会自动切换到本地语音）
         </label>
       </div>
     </section>
@@ -126,7 +137,10 @@
       </div>
       <div class="status-bar">
         <span id="statusText">就绪</span>
-        <span id="wakeLockStatus" class="wake-lock-badge">🔓 未锁定</span>
+        <span class="status-badges">
+          <span id="ttsStatus" class="wake-lock-badge">🔊 在线语音</span>
+          <span id="wakeLockStatus" class="wake-lock-badge">🔓 未锁定</span>
+        </span>
       </div>
     </section>
 

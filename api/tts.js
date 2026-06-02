@@ -1,5 +1,43 @@
 const { MsEdgeTTS, OUTPUT_FORMAT } = require("msedge-tts");
 
+const MAX_ATTEMPTS = 3;
+const TTS_TIMEOUT_MS = 12000;
+const RETRY_DELAY_MS = 350;
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function withTimeout(promise, ms) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("TTS request timed out")), ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+async function generateAudioBuffer(text, voice, rateStr) {
+  const tts = new MsEdgeTTS();
+  try {
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(text, { rate: rateStr });
+
+    const chunks = [];
+    for await (const chunk of audioStream) {
+      chunks.push(chunk);
+    }
+
+    const audioBuffer = Buffer.concat(chunks);
+    if (audioBuffer.length === 0) {
+      throw new Error("TTS returned empty audio");
+    }
+    return audioBuffer;
+  } finally {
+    tts.close();
+  }
+}
+
 module.exports = async function handler(req, res) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -22,27 +60,33 @@ module.exports = async function handler(req, res) {
   const ratePercent = Math.round((rate - 1) * 100);
   const rateStr = (ratePercent >= 0 ? "+" : "") + ratePercent + "%";
 
-  try {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const audioBuffer = await withTimeout(
+        generateAudioBuffer(text, voice, rateStr),
+        TTS_TIMEOUT_MS
+      );
 
-    const { audioStream } = tts.toStream(text, { rate: rateStr });
-
-    // Collect stream into buffer
-    const chunks = [];
-    for await (const chunk of audioStream) {
-      chunks.push(chunk);
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Length", audioBuffer.length);
+      res.setHeader("X-TTS-Attempt", String(attempt));
+      return res.status(200).send(audioBuffer);
+    } catch (err) {
+      lastError = err;
+      console.warn(
+        `TTS attempt ${attempt}/${MAX_ATTEMPTS} failed:`,
+        err.message || err
+      );
+      if (attempt < MAX_ATTEMPTS) {
+        await wait(RETRY_DELAY_MS * attempt);
+      }
     }
-    const audioBuffer = Buffer.concat(chunks);
-
-    tts.close();
-
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.setHeader("Content-Length", audioBuffer.length);
-    return res.status(200).send(audioBuffer);
-  } catch (err) {
-    console.error("TTS error:", err.message || err);
-    return res.status(500).json({ error: "TTS generation failed: " + (err.message || err) });
   }
+
+  console.error("TTS error:", lastError && (lastError.message || lastError));
+  return res.status(503).json({
+    error: "TTS generation failed after retries: " + (lastError && (lastError.message || lastError)),
+  });
 };

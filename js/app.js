@@ -5,22 +5,28 @@ const state = {
   isPlaying: false,
   isPaused: false,
   repeatCount: 2,
-  rate: 0.5, // slider multiplier, actual TTS rate = rate * 0.6
+  rate: 0.5,
   volume: 1.0,
   interval: 16,
   wordVisible: false,
   startPrompt: false,
   manualMode: false,
   customDelimiters: [], // user-added custom delimiters
-  preferBrowserTTS: false, // user preference, default server-first
-  currentEngine: null, // 'server'|'browser' — set on first speak, updated on fallback
+  preferBrowserTTS: false, // manual local TTS preference, default online/server TTS
+  currentEngine: null, // 'server'|'browser'
+  serverTTSUnavailable: false,
   wakeLock: null,
   utterance: null,
   currentAudio: null, // Active Audio element for server TTS (used to abort)
+  currentAudioUrl: null,
   playTimeout: null,
   playTimeoutId: null, // Additional timeout id for keepAliveSleep interval
   manualResolve: null, // resolve function for manual confirm
 };
+
+const SERVER_TTS_ATTEMPTS = 2;
+const SERVER_TTS_FETCH_TIMEOUT_MS = 15000;
+const DELIMITER_SETTINGS_VERSION = 2;
 
 // ========== DOM Elements ==========
 const $ = (id) => document.getElementById(id);
@@ -49,6 +55,7 @@ const dom = {
   stopBtn: $('stopBtn'),
   nextBtn: $('nextBtn'),
   statusText: $('statusText'),
+  ttsStatus: $('ttsStatus'),
   wakeLockStatus: $('wakeLockStatus'),
   wordlistName: $('wordlistName'),
   saveWordlist: $('saveWordlist'),
@@ -101,6 +108,7 @@ function buildDelimiterRegex() {
 
   const chars = all.map(d => {
     if (d === '\\n' || d === '\n') return '\\n';
+    if (d === '\\t' || d === '\t') return '\\t';
     return d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   });
   return new RegExp('[' + chars.join('') + ']+');
@@ -133,53 +141,129 @@ function updateWordPreview() {
 
   dom.wordPreview.classList.remove('hidden');
   dom.wordCount.textContent = state.words.length;
-  dom.wordList.innerHTML = state.words
-    .map(w => `<span class="word-tag">${w}</span>`)
-    .join('');
+  dom.wordList.replaceChildren(...state.words.map(word => {
+    const tag = document.createElement('span');
+    tag.className = 'word-tag';
+    tag.textContent = word;
+    return tag;
+  }));
 }
 
 function updateFullWordList() {
-  dom.fullWordList.innerHTML = state.words
-    .map((w, i) => {
-      let cls = 'full-word-item';
-      if (i === state.currentIndex) cls += ' active';
-      if (i < state.currentIndex) cls += ' done';
-      return `<span class="${cls}" data-index="${i}">${w}</span>`;
-    })
-    .join('');
+  dom.fullWordList.replaceChildren(...state.words.map((word, i) => {
+    const item = document.createElement('span');
+    item.className = 'full-word-item';
+    if (i === state.currentIndex) item.classList.add('active');
+    if (i < state.currentIndex) item.classList.add('done');
+    item.dataset.index = String(i);
+    item.textContent = word;
+    return item;
+  }));
 }
 
 // ========== TTS Engine ==========
 
-// Speak via server TTS API
-function speakViaServer(text) {
-  return new Promise((resolve, reject) => {
-    const actualRate = state.rate * 0.6;
-    const url = `/api/tts?text=${encodeURIComponent(text)}&rate=${actualRate}`;
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
+function getServerTTSRate() {
+  // msedge-tts maps 1.0 to "+0%"; keep the existing slower online pacing.
+  return state.rate * 0.6;
+}
+
+function getBrowserTTSRate() {
+  // Web Speech API uses a direct multiplier. Reusing the Edge multiplier makes
+  // local voices too compressed into the slow range, and some voices clamp it.
+  return Math.min(Math.max(state.rate, 0.1), 10);
+}
+
+async function fetchServerAudio(url) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SERVER_TTS_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const data = await response.json();
+        detail = data.error || detail;
+      } catch {
+        // Ignore non-JSON error bodies
+      }
+      throw new Error(`在线语音生成失败 (${response.status}): ${detail}`);
+    }
+
+    const audioBlob = await response.blob();
+    if (audioBlob.size === 0) {
+      throw new Error('在线语音返回了空音频');
+    }
+    return audioBlob;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Speak via server TTS API
+async function speakViaServer(text) {
+  let lastError;
+  for (let attempt = 1; attempt <= SERVER_TTS_ATTEMPTS; attempt++) {
+    try {
+      const actualRate = getServerTTSRate();
+      const url = `/api/tts?text=${encodeURIComponent(text)}&rate=${actualRate}&_=${Date.now()}`;
+      const audioBlob = await fetchServerAudio(url);
+      await playAudioBlob(audioBlob);
+      return;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Server TTS playback attempt ${attempt}/${SERVER_TTS_ATTEMPTS} failed:`, err);
+      if (attempt < SERVER_TTS_ATTEMPTS) {
+        dom.statusText.textContent = '在线语音重试中...';
+        await wait(350 * attempt);
+      }
+    }
+  }
+  throw lastError;
+}
+
+function playAudioBlob(audioBlob) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio();
     audio.volume = state.volume;
     state.currentAudio = audio;
+    state.currentAudioUrl = objectUrl;
 
     const abortCheck = setInterval(() => {
-      if (!state.isPlaying) {
+      if (!state.isPlaying || state.currentAudio !== audio) {
         audio.pause();
         audio.src = '';
+        URL.revokeObjectURL(objectUrl);
         clearInterval(abortCheck);
-        state.currentAudio = null;
+        if (state.currentAudio === audio) {
+          state.currentAudio = null;
+          state.currentAudioUrl = null;
+        }
         resolve();
       }
     }, 200);
 
     const cleanup = () => {
       clearInterval(abortCheck);
+      URL.revokeObjectURL(objectUrl);
       state.currentAudio = null;
+      state.currentAudioUrl = null;
     };
 
     audio.onended = () => { cleanup(); resolve(); };
     audio.onerror = () => { cleanup(); reject(new Error('音频播放失败')); };
 
-    audio.src = url;
+    audio.src = objectUrl;
     audio.play().catch(err => { cleanup(); reject(err); });
   });
 }
@@ -193,7 +277,7 @@ function speakViaBrowser(text) {
     setTimeout(() => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN';
-      utterance.rate = state.rate * 0.6;
+      utterance.rate = getBrowserTTSRate();
       utterance.volume = state.volume;
 
       const voices = speechSynthesis.getVoices();
@@ -212,55 +296,41 @@ function speakViaBrowser(text) {
   });
 }
 
-// Main speak: server-first by default, with bidirectional fallback
+// Main speak: online/server TTS by default, with local/browser fallback on failure.
 async function speak(text) {
-  // First call: try preferred engine
-  if (state.currentEngine === null) {
-    const primary = state.preferBrowserTTS ? 'browser' : 'server';
-    const secondary = state.preferBrowserTTS ? 'server' : 'browser';
-    try {
-      await (primary === 'server' ? speakViaServer(text) : speakViaBrowser(text));
-      state.currentEngine = primary;
-      updateTTSMarker();
-      return;
-    } catch (e) {
-      console.warn(`Primary TTS (${primary}) failed, falling back to ${secondary}:`, e);
-      state.currentEngine = secondary;
-      updateTTSMarker();
-      // Fall through to secondary
-    }
+  state.currentEngine = (state.preferBrowserTTS || state.serverTTSUnavailable) ? 'browser' : 'server';
+  updateTTSMarker();
+
+  if (state.currentEngine === 'browser') {
+    return speakViaBrowser(text);
   }
 
-  // Use known engine, downgrade on failure
-  if (state.currentEngine === 'server') {
-    try {
-      return await speakViaServer(text);
-    } catch (e) {
-      console.warn('Server TTS failed, falling back to browser:', e);
-      state.currentEngine = 'browser';
-      updateTTSMarker();
-      return speakViaBrowser(text);
-    }
-  } else {
+  try {
+    return await speakViaServer(text);
+  } catch (err) {
+    console.warn('Online TTS failed, falling back to local speech:', err);
+    state.serverTTSUnavailable = true;
+    state.currentEngine = 'browser';
+    updateTTSMarker(true);
+    dom.statusText.textContent = '在线语音暂时不可用，已自动切换到本地语音';
     try {
       return await speakViaBrowser(text);
-    } catch (e) {
-      console.warn('Browser TTS failed, falling back to server:', e);
-      state.currentEngine = 'server';
-      updateTTSMarker();
-      return speakViaServer(text);
+    } catch (browserErr) {
+      dom.statusText.textContent = '在线语音和本地语音都不可用，请稍后重试';
+      throw browserErr;
     }
   }
 }
 
-function updateTTSMarker() {
-  const badge = dom.wakeLockStatus;
+function updateTTSMarker(isFallback = false) {
+  const badge = dom.ttsStatus;
   if (state.currentEngine === 'server') {
-    badge.textContent = '🔊 Edge 语音';
+    badge.textContent = '🔊 在线语音';
   } else if (state.currentEngine === 'browser') {
-    badge.textContent = '🔊 浏览器语音';
+    const autoFallback = isFallback || (!state.preferBrowserTTS && state.serverTTSUnavailable);
+    badge.textContent = autoFallback ? '🔊 本地语音（自动）' : '🔊 本地语音';
   } else {
-    badge.textContent = state.preferBrowserTTS ? '🔊 浏览器语音' : '🔊 Edge 语音';
+    badge.textContent = state.preferBrowserTTS ? '🔊 本地语音' : '🔊 在线语音';
   }
 }
 
@@ -276,6 +346,10 @@ function abortSpeech() {
     state.currentAudio.pause();
     state.currentAudio.src = '';
     state.currentAudio = null;
+  }
+  if (state.currentAudioUrl) {
+    URL.revokeObjectURL(state.currentAudioUrl);
+    state.currentAudioUrl = null;
   }
   speechSynthesis.cancel();
 }
@@ -340,6 +414,16 @@ function confirmNext() {
   }
 }
 
+function handleSpeechFailure(err) {
+  console.warn('TTS failed during playback:', err);
+  state.isPlaying = false;
+  state.isPaused = false;
+  abortDelay();
+  dom.playBtn.textContent = '▶';
+  updateProgress();
+  releaseWakeLock();
+}
+
 async function playWord(index) {
   if (index < 0 || index >= state.words.length) return;
 
@@ -361,7 +445,12 @@ async function playWord(index) {
       if (!state.isPlaying) return;
       if (state.currentIndex !== index) return;
     }
-    await speak(word);
+    try {
+      await speak(word);
+    } catch (err) {
+      handleSpeechFailure(err);
+      return;
+    }
     if (state.currentIndex !== index) return; // user skipped mid-speak
     if (i < state.repeatCount - 1) {
       await sleep(2000);
@@ -382,16 +471,15 @@ async function startPlayback() {
 
   state.isPlaying = true;
   state.isPaused = false;
+  state.serverTTSUnavailable = false;
+  state.currentEngine = state.preferBrowserTTS ? 'browser' : 'server';
   dom.playBtn.textContent = '⏸';
   dom.statusText.textContent = '播放中...';
   await requestWakeLock();
 
   // Warm up speechSynthesis engine to prevent first-word clipping (browser TTS only)
   // Determine which engine will be used first
-  if (state.currentEngine === null) {
-    state.currentEngine = state.preferBrowserTTS ? 'browser' : 'server';
-    updateTTSMarker();
-  }
+  updateTTSMarker();
 
   if (state.currentEngine === 'browser') {
     speechSynthesis.cancel();
@@ -400,7 +488,7 @@ async function startPlayback() {
       setTimeout(() => {
         const warmup = new SpeechSynthesisUtterance('好');
         warmup.volume = 0.01;
-        warmup.rate = state.rate * 0.6;
+        warmup.rate = getBrowserTTSRate();
         warmup.lang = 'zh-CN';
         const voices = speechSynthesis.getVoices();
         const zhVoice = voices.find(v => v.lang.startsWith('zh'));
@@ -414,7 +502,12 @@ async function startPlayback() {
 
   // Optional start prompt
   if (state.startPrompt) {
-    await speak('请开始听写');
+    try {
+      await speak('请开始听写');
+    } catch (err) {
+      handleSpeechFailure(err);
+      return;
+    }
     await sleep(500);
   }
 
@@ -454,28 +547,39 @@ async function startPlayback() {
       dom.statusText.textContent = `间隔等待... (${state.words.length}/${state.words.length})`;
       await keepAliveSleep(state.interval * 1000);
       dom.statusText.textContent = '听写完毕';
-      await speak('听写完毕');
+      try {
+        await speak('听写完毕');
+      } catch (err) {
+        console.warn('End prompt TTS failed:', err);
+      }
     }
-    dom.statusText.textContent = '听写完成！';
-    stopPlayback();
+    stopPlayback('听写完成！');
   }
 }
 
 function pausePlayback() {
   state.isPaused = true;
-  speechSynthesis.pause();
+  if (state.currentAudio) {
+    state.currentAudio.pause();
+  } else {
+    speechSynthesis.pause();
+  }
   dom.playBtn.textContent = '▶';
   dom.statusText.textContent = '已暂停';
 }
 
 function resumePlayback() {
   state.isPaused = false;
-  speechSynthesis.resume();
+  if (state.currentAudio) {
+    state.currentAudio.play().catch(err => console.warn('Resume audio failed:', err));
+  } else {
+    speechSynthesis.resume();
+  }
   dom.playBtn.textContent = '⏸';
   dom.statusText.textContent = '播放中...';
 }
 
-function stopPlayback() {
+function stopPlayback(statusText = '已停止') {
   state.isPlaying = false;
   state.isPaused = false;
   state.currentIndex = -1;
@@ -487,7 +591,7 @@ function stopPlayback() {
   }
   dom.nextBtn.classList.remove('playing-pulse');
   dom.playBtn.textContent = '▶';
-  dom.statusText.textContent = '已停止';
+  dom.statusText.textContent = statusText;
   updateProgress();
   updateFullWordList();
   releaseWakeLock();
@@ -579,7 +683,6 @@ function releaseWakeLock() {
 }
 
 // Audio fallback: play silent audio to keep device awake
-let fallbackAudio = null;
 let fallbackAudioCtx = null;
 
 function startAudioFallback() {
@@ -630,9 +733,16 @@ function toggleWordVisibility() {
 function addCustomDelimiterChip(value) {
   const label = document.createElement('label');
   label.className = 'delimiter-chip custom-chip';
-  label.innerHTML = `<input type="checkbox" value="${value}" checked><span>${value} ✕</span>`;
-  label.querySelector('input').addEventListener('change', saveSettings);
-  label.querySelector('span').addEventListener('click', (e) => {
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.value = value;
+  input.checked = true;
+  const text = document.createElement('span');
+  text.textContent = `${value} x`;
+
+  label.append(input, text);
+  input.addEventListener('change', saveSettings);
+  text.addEventListener('click', (e) => {
     // Click on the ✕ area removes the custom delimiter
     const rect = e.target.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -753,6 +863,7 @@ function saveSettings() {
     startPrompt: state.startPrompt,
     manualMode: state.manualMode,
     preferBrowserTTS: state.preferBrowserTTS,
+    delimiterSettingsVersion: DELIMITER_SETTINGS_VERSION,
     delimiters: getSelectedDelimiters(),
     customDelimiters: state.customDelimiters,
   };
@@ -784,7 +895,7 @@ function loadSettings() {
     dom.intervalSlider.disabled = state.manualMode;
 
     // Restore delimiter chip states
-    if (settings.delimiters) {
+    if (settings.delimiterSettingsVersion === DELIMITER_SETTINGS_VERSION && settings.delimiters) {
       dom.delimiterChips.querySelectorAll('input').forEach(cb => {
         cb.checked = settings.delimiters.includes(cb.value);
       });
@@ -938,11 +1049,12 @@ function bindEvents() {
   dom.preferBrowserToggle.addEventListener('change', () => {
     state.preferBrowserTTS = dom.preferBrowserToggle.checked;
     // Reset current engine so next speak re-selects
+    state.serverTTSUnavailable = false;
     state.currentEngine = null;
     updateTTSMarker();
     saveSettings();
   });
-  dom.stopBtn.addEventListener('click', stopPlayback);
+  dom.stopBtn.addEventListener('click', () => stopPlayback());
   dom.prevBtn.addEventListener('click', prevWord);
   dom.nextBtn.addEventListener('click', nextWord);
   dom.toggleWordBtn.addEventListener('click', toggleWordVisibility);
@@ -972,6 +1084,7 @@ function bindEvents() {
 function init() {
   initTheme();
   loadSettings();
+  updateTTSMarker();
   refreshWordlistDropdown();
   bindEvents();
   dom.currentWord.classList.add('word-hidden');
