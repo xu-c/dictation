@@ -3,22 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>语文听写助手 v2.2</title>
+  <title>语文听写助手 v2.3</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <div class="app-bg"></div>
   <div class="container">
-    <header>
-      <h1>语文<span>听写</span>助手</h1>
+    <header class="app-header">
+      <div>
+        <div class="app-kicker">DICTATION STUDIO</div>
+        <h1>语文<span>听写</span>助手</h1>
+      </div>
       <button id="themeToggle" class="btn-icon btn-theme" title="切换深色模式">🌙</button>
     </header>
 
     <!-- 词汇输入区 -->
-    <section class="card" id="inputSection">
-      <h2>词汇输入</h2>
+    <section class="card input-card" id="inputSection">
+      <h2><span>01</span>词汇输入</h2>
       <textarea id="wordInput" placeholder="请输入听写词汇，例如：春天 花朵 小鸟 阳光&#10;每行或用分隔符隔开均可" rows="5"></textarea>
       <div class="delimiter-section">
-        <span class="delimiter-label">分隔符：</span>
+        <span class="delimiter-label">分隔符</span>
         <div class="delimiter-chips" id="delimiterChips">
           <label class="delimiter-chip"><input type="checkbox" value=" " checked><span>空格</span></label>
           <label class="delimiter-chip"><input type="checkbox" value="\n" checked><span>换行</span></label>
@@ -55,7 +59,7 @@
 
     <!-- 参数设置区 -->
     <section class="card" id="settingsSection">
-      <h2>播放设置</h2>
+      <h2><span>02</span>播放设置</h2>
       <div class="settings-grid">
         <div class="setting-item">
           <label>语速：<span id="rateValue">0.5</span></label>
@@ -104,7 +108,7 @@
 
     <!-- 词表管理 -->
     <section class="card" id="wordlistSection">
-      <h2>词表管理</h2>
+      <h2><span>03</span>词表管理</h2>
       <div class="wordlist-controls">
         <input type="text" id="wordlistName" placeholder="词表名称" maxlength="20">
         <button id="saveWordlist" class="btn">保存词表</button>
@@ -118,7 +122,7 @@
 
     <!-- 播放区 -->
     <section class="card player-section" id="playerSection">
-      <h2>听写播放</h2>
+      <h2><span>04</span>听写播放</h2>
       <div id="currentWordDisplay" class="current-word">
         <span id="currentWord" class="word-hidden">●●●</span>
         <button id="toggleWordBtn" class="btn-sm">显示</button>
@@ -147,7 +151,7 @@
     <!-- 词汇列表预览 -->
     <section class="card collapsible" id="listSection">
       <h2 class="collapsible-header" id="listToggle">
-        词汇列表 <span class="toggle-icon">▼</span>
+        <span>05</span>词汇列表 <span class="toggle-icon">▼</span>
       </h2>
       <div id="wordListPreview" class="collapsible-content hidden">
         <div id="fullWordList" class="full-word-list"></div>
