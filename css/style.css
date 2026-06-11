@@ -891,8 +891,11 @@ kbd {
   }
 
   .player-controls {
+    display: grid;
+    grid-template-columns: 52px minmax(96px, 1fr) 52px 52px;
     gap: 8px;
-    justify-content: space-between;
+    justify-content: center;
+    align-items: center;
   }
 
   .status-bar {
@@ -904,16 +907,32 @@ kbd {
     justify-content: flex-start;
   }
 
-  .btn-play {
-    width: 62px;
-    height: 62px;
-    font-size: 1.2em;
-  }
-
   .btn-icon {
     width: 40px;
     height: 40px;
     font-size: 1.05em;
+  }
+
+  .btn-theme {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+  }
+
+  .player-controls .btn-icon {
+    width: 52px;
+    height: 52px;
+    justify-self: center;
+    border-radius: 50%;
+  }
+
+  .player-controls .btn-play {
+    width: 100%;
+    max-width: 132px;
+    height: 56px;
+    border-radius: 999px;
+    justify-self: center;
+    font-size: 1.2em;
   }
 
   .card {
@@ -941,13 +960,17 @@ kbd {
   }
 
   .player-controls {
-    display: grid;
-    grid-template-columns: 1fr 1.3fr 1fr 1fr;
+    grid-template-columns: 48px minmax(88px, 1fr) 48px 48px;
   }
 
-  .btn-icon,
-  .btn-play {
-    width: 100%;
+  .player-controls .btn-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .player-controls .btn-play {
+    height: 52px;
+    max-width: 112px;
   }
 }
 
